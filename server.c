@@ -3,6 +3,7 @@
 #include <time.h>
 #include "functii.h"
 
+GAME game;
 
 void generare_id(char id[], int lungime) {
     const char caractere[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -42,14 +43,14 @@ void citireClient(CLIENT *c, char simbol_opus) {
     printf("Introduceti parola dorita: ");
     scanf("%99s", c->parola);
 
-    printf("Introduceti simbolul dorit:\n");
-    printf("X\n");
-    printf("0\n");
+    printf("Introduceti simbolul dorit(X sau 0):\n");
     while (1) {
         scanf(" %c", &c->simbol);
         if (c->simbol == simbol_opus) {
-            printf("A fost ales deja acest simbol.");
-        } else {
+            printf("A fost ales deja acest simbol, alegeti din nou\n");
+        } else if (c->simbol != 'X' && c->simbol !='0'){
+            printf("Simbol invalid, alegeti din nou.\n");
+        } else{
             break;
         }
     }
@@ -135,7 +136,32 @@ void citire_mutare_clienti(GAME *g, char simbol) {
     }
 }
 
+void meniu_joc(){
+    printf("            Bine ati venit!         \n");
+    printf("Optiuni:\n");
+    printf("1.Incepeti meci.\n");
+    printf("2.Alaturati-va unui meci.\n");
+    int optiune=0;
+    char s[100];
+    scanf("%d",&optiune);
+    switch(optiune){
+        case 1:{
+            citireClient(&game.client1, '\0');
+            break;
+        }
+        case 2:{
+            printf("Introduceti parola:");
+            scanf("%99s",s);
+            break;
+        }
+        default:{
+            break;
+        }
+    }
+}
+
 void joc(GAME *game) {
+    printf("Pozitiile sunt numerotate incepand de la 0 si se termina in 2\n");
     initializare_tabla(game->tabla);
     desenare_tabla(game->tabla);
 
@@ -164,17 +190,41 @@ void joc(GAME *game) {
     printf("Tabla este plină. Egalitate intre jucatori.\n");
 }
 
+int reincepe_joc(GAME *game) {
+    int opt=0;
+    char optiune;
+    while (1) {
+        printf("Doriti sa reincepeti jocul? (y/n): ");
+        scanf(" %c", &optiune);
+        if (optiune == 'y' || optiune == 'Y') {
+            opt=1;
+            joc(game);
+        } else if (optiune == 'n' || optiune == 'N') {
+            printf("Multumim pentru joc!\n");
+            exit(0);
+        } else {
+            printf("Optiune invalida. Introduceti 'y' pentru a reincepe sau 'n' pentru a iesi.\n");
+        }
+    }
+    return opt;
+}
+
+
 int main(void) {
     srand((unsigned int)time(NULL)); 
 
-    GAME game;
+    meniu_joc();
+    //e doar inceputul functiei, va fi modificat ulterior astfel incat la alegerea primei variante sa astepte intrarea altui jucator
+    //la alegerea celei de-a doua variante va verifca daca parola e valida si il va introduce pe jucator in meci
 
-    printf("Introduceti detalii pentru clientul 1:\n");
+    /*printf("Introduceti detalii pentru clientul 1:\n");
     citireClient(&game.client1, '\0');
     printf("Introduceti detalii pentru clientul 2:\n");
-    citireClient(&game.client2, game.client1.simbol);
+    citireClient(&game.client2, game.client1.simbol);*/
 
-    joc(&game);
+    do {
+        joc(&game);
+    }while (reincepe_joc(&game));
 
     return 0;
 }

@@ -6,34 +6,36 @@
 #define LINII 3
 #define COLOANE 3
 
-typedef enum{
+typedef enum {
     TRUE = 1,
     FALSE = 0
-}BOOLEAN;
+} BOOLEAN;
 
-typedef struct MUTARE{
+typedef struct {
     int x;
     int y;
-}MUTARE;
+} MUTARE;
 
-typedef struct{
+typedef struct {
     char nume[SIZE_NUME];
     char parola[SIZE_PAROLA];
-}CLIENT;
+    char simbol;
+} CLIENT;
 
-typedef struct GAME{
+typedef struct {
     CLIENT client1;
     CLIENT client2;
-    char tabla[3][3];
-}GAME;
+    char tabla[LINII][COLOANE];
+} GAME;
 
 void generare_id(char id[], int lungime);
-void citireClient(CLIENT *c);
-void citire_mutare_clienti(GAME *g);
+void citireClient(CLIENT *c, char simbol_opus);
+void citire_mutare_clienti(GAME *g, char simbol);
 void initializare_tabla(char tabla[LINII][COLOANE]);
 void desenare_tabla(char tabla[LINII][COLOANE]);
-int verigficare_tabla_plina(char tabla[LINII][COLOANE]);
-void joc(GAME game);
-
+int verificare_tabla_plina(char tabla[LINII][COLOANE]);
+int verificare_castigator(char tabla[LINII][COLOANE], char simbol);
+int reincepe_joc(GAME *game);
+void joc(GAME *game);
 
 #endif
