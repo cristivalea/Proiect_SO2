@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <pthread.h>
 #include "functii.h"
 
 GAME game;
 
-void generare_id(char id[], int lungime) {
+void generare_id(char id[], int lungime){
     const char caractere[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     int nr_caractere = sizeof(caractere) - 1;
 
@@ -15,46 +18,39 @@ void generare_id(char id[], int lungime) {
     id[lungime] = '\0';
 }
 
-void citireClient(CLIENT *c, char simbol_opus) {
-    printf("Doriti sa introduceti numele sau vi se va atribui un id?\n");
-    int optiune = 0;
-    printf("1. Adaugare nume\n");
-    printf("2. Atribuire id\n");
-    printf("Introduceti optiunea dorita: ");
-    scanf("%d", &optiune);
+void gestioneaza_cerere_generare_id(CLIENT *client) {
+    char id[16];
+    generare_id(id, 15); 
+    
+    char mesaj[64];
+    snprintf(mesaj, sizeof(mesaj), "ID generat: %s\n", id);
+    
+    send(client->socket, mesaj, strlen(mesaj), 0); 
+    printf("ID generat si trimis clientului: %s\n", id);
+}
 
-    switch(optiune) {
-        case 1: {
-            printf("Introduceti numele: ");
-            scanf("%99s", c->nume);
-            break;
-        }
-        case 2: {
-            generare_id(c->nume, 20);
-            printf("ID generat: %s\n", c->nume);
-            break;
-        }
-        default:
-            printf("Optiune este invalida.Se va atribui un ID.\n");
-            generare_id(c->nume, 20);
-            break;
+void proceseaza_comunicare_client(CLIENT *client) {
+    char buffer[1024];
+    int bytes_received = recv(client->socket, buffer, sizeof(buffer) - 1, 0);
+    
+    if (bytes_received <= 0) {
+        perror("Eroare la primirea datelor de la client");
+        close(client->socket);
+        return;
     }
-
-    printf("Introduceti parola dorita: ");
-    scanf("%99s", c->parola);
-
-    printf("Introduceti simbolul dorit(X sau 0):\n");
-    while (1) {
-        scanf(" %c", &c->simbol);
-        if (c->simbol == simbol_opus) {
-            printf("A fost ales deja acest simbol, alegeti din nou\n");
-        } else if (c->simbol != 'X' && c->simbol !='0'){
-            printf("Simbol invalid, alegeti din nou.\n");
-        } else{
-            break;
-        }
+    
+    buffer[bytes_received] = '\0'; 
+    printf("Mesaj primit de la client: %s\n", buffer);
+    
+    if (strncmp(buffer, "GEN_ID", 6) == 0) {
+        gestioneaza_cerere_generare_id(client);
+    } else {
+        printf("Mesaj necunoscut de la client: %s\n", buffer);
+        char mesaj[] = "Cerere necunoscuta\n";
+        send(client->socket, mesaj, strlen(mesaj), 0);
     }
 }
+
 
 void initializare_tabla(char tabla[LINII][COLOANE]) {
     for (int i = 0; i < LINII; i++) {
@@ -64,37 +60,26 @@ void initializare_tabla(char tabla[LINII][COLOANE]) {
     }
 }
 
-void desenare_tabla(char tabla[LINII][COLOANE]) {
+void trimite_tabla_client(CLIENT *client, char tabla[LINII][COLOANE]) {
+    char tabla_str[LINII * COLOANE + LINII];
+    int k = 0;
     for (int i = 0; i < LINII; i++) {
         for (int j = 0; j < COLOANE; j++) {
-            printf(" %c ", tabla[i][j]);
-            if (j < COLOANE - 1) {
-                printf("|");
-            }
+            tabla_str[k++] = tabla[i][j];
+            if (j < COLOANE - 1) tabla_str[k++] = '|';
         }
-        printf("\n");
-
-        if (i < LINII - 1) {
-            for (int j = 0; j < COLOANE; j++) {
-                printf("---");
-                if (j < COLOANE - 1) {
-                    printf("+");
-                }
-            }
-            printf("\n");
-        }
+        if (i < LINII - 1) tabla_str[k++] = '\n';
     }
+    tabla_str[k] = '\0';
+    send(client->socket, tabla_str, strlen(tabla_str), 0);
 }
 
-int verificare_tabla_plina(char tabla[LINII][COLOANE]) {
-    for (int i = 0; i < LINII; i++) {
-        for (int j = 0; j < COLOANE; j++) {
-            if (tabla[i][j] == '_') {
-                return FALSE;
-            }
-        }
-    }
-    return TRUE;
+void citire_mutare_client(CLIENT *client, char tabla[LINII][COLOANE], char simbol) {
+    char buffer[16];
+    recv(client->socket, buffer, sizeof(buffer), 0);
+    int linie, coloana;
+    sscanf(buffer, "%d %d", &linie, &coloana);
+    tabla[linie][coloana] = simbol;
 }
 
 int verificare_castigator(char tabla[LINII][COLOANE], char simbol) {
@@ -117,114 +102,116 @@ int verificare_castigator(char tabla[LINII][COLOANE], char simbol) {
     return FALSE;
 }
 
-void citire_mutare_clienti(GAME *g, char simbol) {
-    MUTARE m1;
-    printf("Introduceti mutarea (%c):\n", simbol);
-    printf("Introduceti linia: ");
-    scanf("%d", &m1.x);
-    printf("Introduceti coloana: ");
-    scanf("%d", &m1.y);
-
-    if (m1.x < 0 || m1.x >= LINII || m1.y < 0 || m1.y >= COLOANE) {
-        printf("Mutare este invalida. Introduceti alta mutare.\n");
-        citire_mutare_clienti(g, simbol);
-    } else if (g->tabla[m1.x][m1.y] != '_') {
-        printf("Pozitia aleasa este ocupata. Alegeti alta pozitie.\n");
-        citire_mutare_clienti(g, simbol);
-    } else {
-        g->tabla[m1.x][m1.y] = simbol;
-    }
+void citire_informatii_client(CLIENT *client) {
+    char buffer[1024];
+    recv(client->socket, buffer, sizeof(buffer), 0);
+    sscanf(buffer, "%s %c", client->nume, &client->simbol);
+    printf("Client conectat: %s (Simbol: %c)\n", client->nume, client->simbol);
 }
 
-void meniu_joc(){
-    printf("            Bine ati venit!         \n");
-    printf("Optiuni:\n");
-    printf("1.Incepeti meci.\n");
-    printf("2.Alaturati-va unui meci.\n");
-    int optiune=0;
-    char s[100];
-    scanf("%d",&optiune);
-    switch(optiune){
-        case 1:{
-            citireClient(&game.client1, '\0');
-            break;
-        }
-        case 2:{
-            printf("Introduceti parola:");
-            scanf("%99s",s);
-            break;
-        }
-        default:{
-            break;
-        }
-    }
-}
-
-void joc(GAME *game) {
-    printf("Pozitiile sunt numerotate incepand de la 0 si se termina in 2\n");
+void *joc(void *arg) {
+    GAME *game = (GAME *)arg;
     initializare_tabla(game->tabla);
-    desenare_tabla(game->tabla);
 
-    int mutari = 0;
-    while (verificare_tabla_plina(game->tabla) == FALSE) {
-        if (mutari % 2 == 0) {
-            printf("Tura clientului %s (%c):\n", game->client1.nume, game->client1.simbol);
-            citire_mutare_clienti(game, game->client1.simbol);
-            desenare_tabla(game->tabla);
-            if (verificare_castigator(game->tabla, game->client1.simbol)) {
-                printf("Clientul %s a castigat!\n", game->client1.nume);
-                return;
-            }
-        } else {
-            printf("Tura clientului %s (%c):\n", game->client2.nume, game->client2.simbol);
-            citire_mutare_clienti(game, game->client2.simbol);
-            desenare_tabla(game->tabla);
-            if (verificare_castigator(game->tabla, game->client2.simbol)) {
-                printf("Clientul %s a castigat!\n", game->client2.nume);
-                return;
-            }
-        }
-        mutari++;
-    }
-
-    printf("Tabla este plină. Egalitate intre jucatori.\n");
-}
-
-int reincepe_joc(GAME *game) {
-    int opt=0;
-    char optiune;
     while (1) {
-        printf("Doriti sa reincepeti jocul? (y/n): ");
-        scanf(" %c", &optiune);
-        if (optiune == 'y' || optiune == 'Y') {
-            opt=1;
-            joc(game);
-        } else if (optiune == 'n' || optiune == 'N') {
-            printf("Multumim pentru joc!\n");
-            exit(0);
-        } else {
-            printf("Optiune invalida. Introduceti 'y' pentru a reincepe sau 'n' pentru a iesi.\n");
+        int mutari = 0;
+        while (1) {
+            CLIENT *client_curent = (mutari % 2 == 0) ? &game->client1 : &game->client2;
+            char simbol = client_curent->simbol;
+
+            trimite_tabla_client(&game->client1, game->tabla);
+            trimite_tabla_client(&game->client2, game->tabla);
+
+            citire_mutare_client(client_curent, game->tabla, simbol);
+
+            if (verificare_castigator(game->tabla, simbol)) {
+                char mesaj[256];
+                sprintf(mesaj, "Jucatorul %s a castigat!\n", client_curent->nume);
+                send(game->client1.socket, mesaj, strlen(mesaj), 0);
+                send(game->client2.socket, mesaj, strlen(mesaj), 0);
+                break;
+            }
+
+            if (++mutari == LINII * COLOANE) {
+                char mesaj[] = "Remiza! Tabla este plina.\n";
+                send(game->client1.socket, mesaj, strlen(mesaj), 0);
+                send(game->client2.socket, mesaj, strlen(mesaj), 0);
+                break;
+            }
         }
+
+        char optiune[16];
+        recv(game->client1.socket, optiune, sizeof(optiune), 0);
+        int opt1 = atoi(optiune);
+
+        recv(game->client2.socket, optiune, sizeof(optiune), 0);
+        int opt2 = atoi(optiune);
+
+        if (opt1 == 0 || opt2 == 0) {
+            close(game->client1.socket);
+            close(game->client2.socket);
+            free(game);
+            return NULL;
+        }
+
+        initializare_tabla(game->tabla);
     }
-    return opt;
 }
 
+int main() {
+    int fd_server;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
 
-int main(void) {
-    srand((unsigned int)time(NULL)); 
+    fd_server = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd_server == 0) {
+        perror("Eroare la socket\n");
+        exit(1);
+    }
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
 
-    meniu_joc();
-    //e doar inceputul functiei, va fi modificat ulterior astfel incat la alegerea primei variante sa astepte intrarea altui jucator
-    //la alegerea celei de-a doua variante va verifca daca parola e valida si il va introduce pe jucator in meci
+    if (bind(fd_server, (struct sockaddr *)&address, addrlen) < 0) {
+        perror("Eroare la bind");
+        exit(2);
+    }
 
-    /*printf("Introduceti detalii pentru clientul 1:\n");
-    citireClient(&game.client1, '\0');
-    printf("Introduceti detalii pentru clientul 2:\n");
-    citireClient(&game.client2, game.client1.simbol);*/
+    if (listen(fd_server, MAX_CLIENTI) < 0) {
+        perror("Eroare la listen\n");
+        exit(3);
+    }
 
-    do {
-        joc(&game);
-    }while (reincepe_joc(&game));
+    printf("Serverul asteapta conexiuni pe portul: %d\n", PORT);
+
+    while (1) {
+        GAME *game = (GAME *)malloc(sizeof(GAME));
+        if (game == NULL) {
+            perror("Eroare la alocarea jocului\n");
+            exit(4);
+        }
+
+        if ((game->client1.socket = accept(fd_server, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0) {
+            perror("Eroare la accept client1\n");
+            free(game);
+            continue;
+        }
+        printf("Primul jucator conectat\n");
+        proceseaza_comunicare_client(&game->client1);
+
+        if ((game->client2.socket = accept(fd_server, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0) {
+            perror("Eroare la accept client2\n");
+            close(game->client1.socket);
+            free(game);
+            continue;
+        }
+        printf("Al doilea jucator conectat\n");
+        proceseaza_comunicare_client(&game->client2);
+
+        pthread_t th;
+        pthread_create(&th, NULL, joc, (void *)game);
+        pthread_detach(th);
+    }
 
     return 0;
 }
