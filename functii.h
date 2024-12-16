@@ -11,6 +11,7 @@
 typedef struct {
     char nume[50];
     char simbol;
+    char parola[50];
     int socket;
 } CLIENT;
 
@@ -18,8 +19,13 @@ typedef struct {
     CLIENT client1;
     CLIENT client2;
     char tabla[LINII][COLOANE];
+    char password[50];
 } GAME;
 
+typedef struct {
+    int x;
+    int y;
+} MUTARE;
 
 void generare_id(char id[], int lungime);
 void gestioneaza_cerere_generare_id(CLIENT *client);
@@ -30,6 +36,5 @@ void citire_mutare_client(CLIENT *client, char tabla[LINII][COLOANE], char simbo
 int verificare_castigator(char tabla[LINII][COLOANE], char simbol);
 void citire_informatii_client(CLIENT *client);
 void *joc(void *arg);
-
 
 #endif
