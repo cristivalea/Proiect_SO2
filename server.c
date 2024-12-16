@@ -8,15 +8,7 @@
 
 GAME game;
 
-void generare_id(char id[], int lungime){
-    const char caractere[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    int nr_caractere = sizeof(caractere) - 1;
 
-    for (int i = 0; i < lungime; i++) {
-        id[i] = caractere[rand() % nr_caractere];
-    }
-    id[lungime] = '\0';
-}
 
 void gestioneaza_cerere_generare_id(CLIENT *client) {
     char id[16];
@@ -51,14 +43,6 @@ void proceseaza_comunicare_client(CLIENT *client) {
     }
 }
 
-
-void initializare_tabla(char tabla[LINII][COLOANE]) {
-    for (int i = 0; i < LINII; i++) {
-        for (int j = 0; j < COLOANE; j++) {
-            tabla[i][j] = '_';
-        }
-    }
-}
 
 void trimite_tabla_client(CLIENT *client, char tabla[LINII][COLOANE]) {
     char tabla_str[LINII * COLOANE + LINII];
