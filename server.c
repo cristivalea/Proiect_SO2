@@ -8,8 +8,6 @@
 
 GAME game;
 
-
-
 void gestioneaza_cerere_generare_id(CLIENT *client) {
     char id[16];
     generare_id(id, 15); 
@@ -42,7 +40,6 @@ void proceseaza_comunicare_client(CLIENT *client) {
         send(client->socket, mesaj, strlen(mesaj), 0);
     }
 }
-
 
 void trimite_tabla_client(CLIENT *client, char tabla[LINII][COLOANE]) {
     char tabla_str[LINII * COLOANE + LINII];
@@ -86,116 +83,106 @@ int verificare_castigator(char tabla[LINII][COLOANE], char simbol) {
     return FALSE;
 }
 
-void citire_informatii_client(CLIENT *client) {
-    char buffer[1024];
-    recv(client->socket, buffer, sizeof(buffer), 0);
-    sscanf(buffer, "%s %c", client->nume, &client->simbol);
-    printf("Client conectat: %s (Simbol: %c)\n", client->nume, client->simbol);
-}
+void *thread_func(void *arg) {
+    CLIENT *client = (CLIENT *)arg;
+    
+    CLIENT client_info;
+    char password[50];
+    
+    recv(client->socket, &client_info, sizeof(CLIENT), 0); // Receive client info
+    recv(client->socket, password, 50, 0); // Receive password
 
-void *joc(void *arg) {
-    GAME *game = (GAME *)arg;
-    initializare_tabla(game->tabla);
-
-    while (1) {
-        int mutari = 0;
-        while (1) {
-            CLIENT *client_curent = (mutari % 2 == 0) ? &game->client1 : &game->client2;
-            char simbol = client_curent->simbol;
-
-            trimite_tabla_client(&game->client1, game->tabla);
-            trimite_tabla_client(&game->client2, game->tabla);
-
-            citire_mutare_client(client_curent, game->tabla, simbol);
-
-            if (verificare_castigator(game->tabla, simbol)) {
-                char mesaj[256];
-                sprintf(mesaj, "Jucatorul %s a castigat!\n", client_curent->nume);
-                send(game->client1.socket, mesaj, strlen(mesaj), 0);
-                send(game->client2.socket, mesaj, strlen(mesaj), 0);
-                break;
-            }
-
-            if (++mutari == LINII * COLOANE) {
-                char mesaj[] = "Remiza! Tabla este plina.\n";
-                send(game->client1.socket, mesaj, strlen(mesaj), 0);
-                send(game->client2.socket, mesaj, strlen(mesaj), 0);
-                break;
-            }
+    if (game.client1.socket == 0) {
+        game.client1 = client_info;
+        strcpy(game.password, password);
+        printf("Client 1 conectat: %s\n", game.client1.nume);
+        send(client->socket, "Asteptare client 2...\n", 22, 0);
+        
+        while (game.client2.socket == 0) {
+            sleep(1);
         }
-
-        char optiune[16];
-        recv(game->client1.socket, optiune, sizeof(optiune), 0);
-        int opt1 = atoi(optiune);
-
-        recv(game->client2.socket, optiune, sizeof(optiune), 0);
-        int opt2 = atoi(optiune);
-
-        if (opt1 == 0 || opt2 == 0) {
-            close(game->client1.socket);
-            close(game->client2.socket);
-            free(game);
-            return NULL;
+        
+        send(client->socket, "Client 2 conectat. Incepe jocul!\n", 33, 0);
+        trimite_tabla_client(client, game.tabla);
+    } else {
+        char received_password[50];
+        recv(client->socket, received_password, 50, 0);
+        
+        if (strcmp(received_password, game.password) != 0) {
+            send(client->socket, "Parola incorecta\n", 17, 0);
+            close(client->socket);
+            pthread_exit(NULL);
         }
-
-        initializare_tabla(game->tabla);
+        
+        game.client2 = client_info;
+        printf("Client 2 conectat: %s\n", game.client2.nume);
+        send(game.client1.socket, "Client 2 conectat. Incepe jocul!\n", 33, 0);
+        trimite_tabla_client(client, game.tabla);
     }
+    
+    while (1) {
+        trimite_tabla_client(client, game.tabla);
+        citire_mutare_client(client, game.tabla, client_info.simbol);
+        if (verificare_castigator(game.tabla, client_info.simbol)) {
+            send(client->socket, "Ai castigat!\n", 13, 0);
+            send(game.client1.socket == client->socket ? game.client2.socket : game.client1.socket, "Ai pierdut!\n", 12, 0);
+            break;
+        }
+    }
+    
+    close(client->socket);
+    pthread_exit(NULL);
 }
 
 int main() {
-    int fd_server;
+    int server_fd, new_socket;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
 
-    fd_server = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd_server == 0) {
-        perror("Eroare la socket\n");
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd == 0) {
+        perror("Eroare la crearea socketului");
         exit(1);
     }
+
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
-    if (bind(fd_server, (struct sockaddr *)&address, addrlen) < 0) {
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("Eroare la bind");
-        exit(2);
+        close(server_fd);
+        exit(1);
     }
 
-    if (listen(fd_server, MAX_CLIENTI) < 0) {
-        perror("Eroare la listen\n");
-        exit(3);
+    if (listen(server_fd, 3) < 0) {
+        perror("Eroare la listen");
+        close(server_fd);
+        exit(1);
     }
 
-    printf("Serverul asteapta conexiuni pe portul: %d\n", PORT);
+    printf("Serverul asteapta conexiuni...\n");
 
     while (1) {
-        GAME *game = (GAME *)malloc(sizeof(GAME));
-        if (game == NULL) {
-            perror("Eroare la alocarea jocului\n");
-            exit(4);
-        }
-
-        if ((game->client1.socket = accept(fd_server, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0) {
-            perror("Eroare la accept client1\n");
-            free(game);
+        new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        if (new_socket < 0) {
+            perror("Eroare la accept");
             continue;
         }
-        printf("Primul jucator conectat\n");
-        proceseaza_comunicare_client(&game->client1);
 
-        if ((game->client2.socket = accept(fd_server, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0) {
-            perror("Eroare la accept client2\n");
-            close(game->client1.socket);
-            free(game);
+        CLIENT *client = malloc(sizeof(CLIENT));
+        if (!client) {
+            perror("Eroare la alocarea memoriei pentru client");
+            close(new_socket);
             continue;
         }
-        printf("Al doilea jucator conectat\n");
-        proceseaza_comunicare_client(&game->client2);
 
-        pthread_t th;
-        pthread_create(&th, NULL, joc, (void *)game);
-        pthread_detach(th);
+        client->socket = new_socket;
+        pthread_t thread_id;
+        pthread_create(&thread_id, NULL, thread_func, (void *)client);
+        pthread_detach(thread_id);
     }
 
+    close(server_fd);
     return 0;
 }

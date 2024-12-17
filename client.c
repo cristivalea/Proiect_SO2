@@ -30,7 +30,7 @@ void citireClient(CLIENT *c, char simbol_opus, char* password) {
             break;
         }
         default:
-            printf("Optiune este invalida.Se va atribui un ID.\n");
+            printf("Optiune este invalida. Se va atribui un ID.\n");
             generare_id(c->nume, 20);
             break;
     }
@@ -38,7 +38,7 @@ void citireClient(CLIENT *c, char simbol_opus, char* password) {
     printf("Introduceti parola dorita: ");
     scanf("%49s", password);
 
-    printf("Introduceti simbolul dorit(X sau 0):\n");
+    printf("Introduceti simbolul dorit (X sau 0):\n");
     while (1) {
         scanf(" %c", &c->simbol);
         if (c->simbol == simbol_opus) {
@@ -51,8 +51,7 @@ void citireClient(CLIENT *c, char simbol_opus, char* password) {
     }
 }
 
-
-void meniu_joc(GAME *game) {
+void meniu_joc(GAME *game, int sockfd) {
     CLIENT *jucator = malloc(sizeof(CLIENT)); 
     if (!jucator) {
         perror("Failed to allocate memory for jucator");
@@ -71,17 +70,22 @@ void meniu_joc(GAME *game) {
             citireClient(jucator, '_', game->password);
             game->client1 = *jucator;
             initializare_tabla(game->tabla); 
+            send(sockfd, jucator, sizeof(CLIENT), 0);
+            send(sockfd, game->password, 50, 0);
             break;
         }
         case 2: {
             printf("Introduceti parola: ");
             scanf("%99s", s);
-            if (strcmp(s, game->password) != 0) {
+            send(sockfd, s, 50, 0);
+            recv(sockfd, s, sizeof(s), 0);
+            if (strcmp(s, "OK") != 0) {
                 printf("Parola incorecta! Iesire...\n");
                 exit(1);
             }
             citireClient(jucator, game->client1.simbol, NULL); 
             game->client2 = *jucator; 
+            send(sockfd, jucator, sizeof(CLIENT), 0); 
             break;
         }
         default: {
@@ -92,7 +96,6 @@ void meniu_joc(GAME *game) {
 
     free(jucator); 
 }
-
 
 int main() {
     int fd_client;
@@ -117,9 +120,7 @@ int main() {
 
     printf("Te-ai conectat la server!\n");
     memset(&game, 0, sizeof(GAME)); 
-    meniu_joc(&game);
-
-    send(fd_client, &game, sizeof(GAME), 0);
+    meniu_joc(&game, fd_client);
 
     while (1) {
         int n = recv(fd_client, buffer, sizeof(buffer) - 1, 0);
