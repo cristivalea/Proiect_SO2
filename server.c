@@ -1,5 +1,3 @@
-// server.c
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,13 +12,19 @@ pthread_mutex_t game_mutex = PTHREAD_MUTEX_INITIALIZER;
 char board[3][3];
 int clients[MAX_CLIENTS];
 int current_turn = 0;
+int moves_count = 0;
+int game_running = 1;
 
 void initialize_board() {
+    pthread_mutex_lock(&game_mutex);
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
             board[i][j] = ' ';
         }
     }
+    moves_count = 0;
+    current_turn = 0;
+    pthread_mutex_unlock(&game_mutex);
 }
 
 void print_board(char *buffer) {
@@ -40,39 +44,84 @@ int check_winner() {
     return 0;
 }
 
+int check_draw() {
+    return moves_count >= 9;
+}
+
 void *client_handler(void *arg) {
     int client_socket = *(int *)arg;
     free(arg);
     char buffer[1024];
     int row, col;
 
-    while (1) {
+    while (game_running) {
         pthread_mutex_lock(&game_mutex);
         if (client_socket == clients[current_turn]) {
             send(client_socket, "TURN", 4, 0);
             pthread_mutex_unlock(&game_mutex);
 
             memset(buffer, 0, sizeof(buffer));
-            recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            int received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            if (received <= 0) {
+                pthread_mutex_unlock(&game_mutex);
+                break;
+            }
             sscanf(buffer, "%d %d", &row, &col);
 
             pthread_mutex_lock(&game_mutex);
-            if (board[row][col] == ' ') {
+            if (row >= 0 && row < 3 && col >= 0 && col < 3 && board[row][col] == ' ') {
                 board[row][col] = (current_turn == 0) ? 'X' : 'O';
-                current_turn = 1 - current_turn;
+                moves_count++;
+                if (!check_winner() && !check_draw()) {
+                    current_turn = 1 - current_turn;
+                }
+            } else {
+                send(client_socket, "TURN", 4, 0);
+                pthread_mutex_unlock(&game_mutex);
+                continue;
             }
+
             print_board(buffer);
             send(clients[0], buffer, strlen(buffer), 0);
             send(clients[1], buffer, strlen(buffer), 0);
 
             if (check_winner()) {
-                strcat(buffer, "\nA castigat unul dintre jucatori!\n");
+                sprintf(buffer, "A castigat jucatorul %d!\n", current_turn + 1);
                 send(clients[0], buffer, strlen(buffer), 0);
                 send(clients[1], buffer, strlen(buffer), 0);
-                break;
             }
+            if (check_draw()) {
+                strcpy(buffer, "Egalitate!\n");
+                send(clients[0], buffer, strlen(buffer), 0);
+                send(clients[1], buffer, strlen(buffer), 0);
+            }
+
+            if (check_winner() || check_draw()) {
+                pthread_mutex_unlock(&game_mutex);
+                memset(buffer, 0, sizeof(buffer));
+                recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+
+                if (strcmp(buffer, "nu") == 0) {
+                    game_running = 0;
+                    send(clients[0], "Server inchis.\n", 15, 0);
+                    send(clients[1], "Server inchis.\n", 15, 0);
+                    close(clients[0]);
+                    close(clients[1]);
+                    break;
+                } else {
+                    initialize_board();
+                    char reset_msg[1024];
+                    print_board(reset_msg);
+                    strcat(reset_msg, "\nJoc resetat. Este randul primului jucator.\n");
+                    send(clients[0], reset_msg, strlen(reset_msg), 0);
+                    send(clients[1], reset_msg, strlen(reset_msg), 0);
+                }
+                continue;
+            }
+            pthread_mutex_unlock(&game_mutex);
+        } else {
+            pthread_mutex_unlock(&game_mutex);
         }
-        pthread_mutex_unlock(&game_mutex);
     }
 
     close(client_socket);
@@ -106,7 +155,7 @@ int main() {
         pthread_create(&thread_id, NULL, client_handler, (void *)new_sock);
     }
 
-    while (1) {
+    while (game_running) {
         sleep(1);
     }
 

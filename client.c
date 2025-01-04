@@ -1,5 +1,3 @@
-// client.c
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,11 +10,18 @@ void joacaMutare(int sockfd) {
     int row, col;
     char mutare[10];
 
-    printf("Introduceti linia si coloana (ex: 1 2): ");
-    scanf("%d %d", &row, &col);
+    while (1) {
+        printf("Introduceti linia si coloana (ex: 1 2): ");
+        scanf("%d %d", &row, &col);
 
-    sprintf(mutare, "%d %d", row, col);
-    send(sockfd, mutare, strlen(mutare), 0);
+        if (row >= 0 && row < 3 && col >= 0 && col < 3) {
+            sprintf(mutare, "%d %d", row, col);
+            send(sockfd, mutare, strlen(mutare), 0);
+            break;
+        } else {
+            printf("Mutare invalida. Incercati din nou.\n");
+        }
+    }
 }
 
 int main() {
@@ -34,7 +39,7 @@ int main() {
     }
 
     char buffer[1024];
-    printf("Conectat la server. Asteptati...");
+    printf("Conectat la server. Asteptati...\n");
 
     while (1) {
         memset(buffer, 0, sizeof(buffer));
@@ -50,6 +55,18 @@ int main() {
 
         if (strcmp(buffer, "TURN") == 0) {
             joacaMutare(sockfd);
+        } else if (strstr(buffer, "A castigat") || strstr(buffer, "Egalitate")) {
+            printf("%s\n", buffer);
+
+            printf("Doriti sa jucati din nou? (da/nu): ");
+            char raspuns[10];
+            scanf("%s", raspuns);
+            send(sockfd, raspuns, strlen(raspuns), 0);
+
+            if (strcmp(raspuns, "nu") == 0) {
+                printf("Iesire din joc.\n");
+                break;
+            }
         }
     }
 
