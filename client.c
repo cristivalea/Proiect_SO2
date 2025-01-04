@@ -1,146 +1,58 @@
+// client.c
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include "functii.h"
 
-void afiseaza_tabla(char* tabla_str) {
-    printf("\nTabla curenta:\n");
-    printf("%s\n", tabla_str);
-}
+#define PORT 12345
 
-void citireClient(CLIENT *c, char simbol_opus, char* password) {
-    printf("Doriti sa introduceti numele sau vi se va atribui un id?\n");
-    int optiune = 0;
-    printf("1. Adaugare nume\n");
-    printf("2. Atribuire id\n");
-    printf("Introduceti optiunea dorita: ");
-    scanf("%d", &optiune);
+void joacaMutare(int sockfd) {
+    int row, col;
+    char mutare[10];
 
-    switch(optiune) {
-        case 1: {
-            printf("Introduceti numele: ");
-            scanf("%99s", c->nume);
-            break;
-        }
-        case 2: {
-            generare_id(c->nume, 20);
-            printf("ID generat: %s\n", c->nume);
-            break;
-        }
-        default:
-            printf("Optiune este invalida. Se va atribui un ID.\n");
-            generare_id(c->nume, 20);
-            break;
-    }
+    printf("Introduceti linia si coloana (ex: 1 2): ");
+    scanf("%d %d", &row, &col);
 
-    printf("Introduceti parola dorita: ");
-    scanf("%49s", password);
-
-    printf("Introduceti simbolul dorit (X sau 0):\n");
-    while (1) {
-        scanf(" %c", &c->simbol);
-        if (c->simbol == simbol_opus) {
-            printf("A fost ales deja acest simbol, alegeti din nou\n");
-        } else if (c->simbol != 'X' && c->simbol != '0') {
-            printf("Simbol invalid, alegeti din nou.\n");
-        } else {
-            break;
-        }
-    }
-}
-
-void meniu_joc(GAME *game, int sockfd) {
-    CLIENT *jucator = malloc(sizeof(CLIENT)); 
-    if (!jucator) {
-        perror("Failed to allocate memory for jucator");
-        exit(1);
-    }
-    
-    printf("            Bine ati venit!         \n");
-    printf("Optiuni:\n");
-    printf("1. Incepeti meci.\n");
-    printf("2. Alaturati-va unui meci.\n");
-    int optiune = 0;
-    char s[100];
-    scanf("%d", &optiune);
-    switch(optiune) {
-        case 1: {
-            citireClient(jucator, '_', game->password);
-            game->client1 = *jucator;
-            initializare_tabla(game->tabla); 
-            send(sockfd, jucator, sizeof(CLIENT), 0);
-            send(sockfd, game->password, 50, 0);
-            break;
-        }
-        case 2: {
-            printf("Introduceti parola: ");
-            scanf("%99s", s);
-            send(sockfd, s, 50, 0);
-            recv(sockfd, s, sizeof(s), 0);
-            if (strcmp(s, "OK") != 0) {
-                printf("Parola incorecta! Iesire...\n");
-                exit(1);
-            }
-            citireClient(jucator, game->client1.simbol, NULL); 
-            game->client2 = *jucator; 
-            send(sockfd, jucator, sizeof(CLIENT), 0); 
-            break;
-        }
-        default: {
-            printf("Optiune invalida. Iesire...\n");
-            exit(1);
-        }
-    }
-
-    free(jucator); 
+    sprintf(mutare, "%d %d", row, col);
+    send(sockfd, mutare, strlen(mutare), 0);
 }
 
 int main() {
-    int fd_client;
-    struct sockaddr_in server_addr;
+    int sockfd;
+    struct sockaddr_in serv_addr;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Connect failed");
+        return 1;
+    }
+
     char buffer[1024];
-    GAME game;
-
-    fd_client = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd_client == -1) {
-        perror("Eroare la crearea socketului");
-        exit(1);
-    }
-
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (connect(fd_client, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-        perror("Eroare la conectare la server");
-        exit(2);
-    }
-
-    printf("Te-ai conectat la server!\n");
-    memset(&game, 0, sizeof(GAME)); 
-    meniu_joc(&game, fd_client);
+    printf("Conectat la server. Asteptati...");
 
     while (1) {
-        int n = recv(fd_client, buffer, sizeof(buffer) - 1, 0);
-        if (n <= 0) {
-            perror("Eroare la primirea datelor de la server");
+        memset(buffer, 0, sizeof(buffer));
+        int bytes_received = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+
+        if (bytes_received <= 0) {
+            printf("Conexiunea s-a inchis.\n");
             break;
         }
-        buffer[n] = '\0';
-        afiseaza_tabla(buffer);
 
-        int x, y;
-        printf("Introduceti linia (0-2): ");
-        scanf("%d", &x);
-        printf("Introduceti coloana (0-2): ");
-        scanf("%d", &y);
+        buffer[bytes_received] = '\0';
+        printf("%s\n", buffer);
 
-        sprintf(buffer, "%d %d", x, y);
-        send(fd_client, buffer, strlen(buffer), 0);
+        if (strcmp(buffer, "TURN") == 0) {
+            joacaMutare(sockfd);
+        }
     }
 
-    close(fd_client);
+    close(sockfd);
     return 0;
 }

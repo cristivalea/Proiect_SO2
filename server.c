@@ -1,186 +1,113 @@
+// server.c
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
-#include "functii.h"
 
-GAME game;
+#define PORT 12345
+#define MAX_CLIENTS 2
 
-void gestioneaza_cerere_generare_id(CLIENT *client) {
-    char id[16];
-    generare_id(id, 15); 
-    
-    char mesaj[64];
-    snprintf(mesaj, sizeof(mesaj), "ID generat: %s\n", id);
-    
-    send(client->socket, mesaj, strlen(mesaj), 0); 
-    printf("ID generat si trimis clientului: %s\n", id);
+pthread_mutex_t game_mutex = PTHREAD_MUTEX_INITIALIZER;
+char board[3][3];
+int clients[MAX_CLIENTS];
+int current_turn = 0;
+
+void initialize_board() {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            board[i][j] = ' ';
+        }
+    }
 }
 
-void proceseaza_comunicare_client(CLIENT *client) {
+void print_board(char *buffer) {
+    sprintf(buffer, "\n %c | %c | %c \n---+---+---\n %c | %c | %c \n---+---+---\n %c | %c | %c \n",
+            board[0][0], board[0][1], board[0][2],
+            board[1][0], board[1][1], board[1][2],
+            board[2][0], board[2][1], board[2][2]);
+}
+
+int check_winner() {
+    for (int i = 0; i < 3; i++) {
+        if (board[i][0] == board[i][1] && board[i][1] == board[i][2] && board[i][0] != ' ') return 1;
+        if (board[0][i] == board[1][i] && board[1][i] == board[2][i] && board[0][i] != ' ') return 1;
+    }
+    if (board[0][0] == board[1][1] && board[1][1] == board[2][2] && board[0][0] != ' ') return 1;
+    if (board[0][2] == board[1][1] && board[1][1] == board[2][0] && board[0][2] != ' ') return 1;
+    return 0;
+}
+
+void *client_handler(void *arg) {
+    int client_socket = *(int *)arg;
+    free(arg);
     char buffer[1024];
-    int bytes_received = recv(client->socket, buffer, sizeof(buffer) - 1, 0);
-    
-    if (bytes_received <= 0) {
-        perror("Eroare la primirea datelor de la client");
-        close(client->socket);
-        return;
-    }
-    
-    buffer[bytes_received] = '\0'; 
-    printf("Mesaj primit de la client: %s\n", buffer);
-    
-    if (strncmp(buffer, "GEN_ID", 6) == 0) {
-        gestioneaza_cerere_generare_id(client);
-    } else {
-        printf("Mesaj necunoscut de la client: %s\n", buffer);
-        char mesaj[] = "Cerere necunoscuta\n";
-        send(client->socket, mesaj, strlen(mesaj), 0);
-    }
-}
+    int row, col;
 
-void trimite_tabla_client(CLIENT *client, char tabla[LINII][COLOANE]) {
-    char tabla_str[LINII * COLOANE + LINII];
-    int k = 0;
-    for (int i = 0; i < LINII; i++) {
-        for (int j = 0; j < COLOANE; j++) {
-            tabla_str[k++] = tabla[i][j];
-            if (j < COLOANE - 1) tabla_str[k++] = '|';
-        }
-        if (i < LINII - 1) tabla_str[k++] = '\n';
-    }
-    tabla_str[k] = '\0';
-    send(client->socket, tabla_str, strlen(tabla_str), 0);
-}
-
-void citire_mutare_client(CLIENT *client, char tabla[LINII][COLOANE], char simbol) {
-    char buffer[16];
-    recv(client->socket, buffer, sizeof(buffer), 0);
-    int linie, coloana;
-    sscanf(buffer, "%d %d", &linie, &coloana);
-    tabla[linie][coloana] = simbol;
-}
-
-int verificare_castigator(char tabla[LINII][COLOANE], char simbol) {
-    for (int i = 0; i < LINII; i++) {
-        if (tabla[i][0] == simbol && tabla[i][1] == simbol && tabla[i][2] == simbol) {
-            return TRUE;
-        }
-    }
-    for (int j = 0; j < COLOANE; j++) {
-        if (tabla[0][j] == simbol && tabla[1][j] == simbol && tabla[2][j] == simbol) {
-            return TRUE;
-        }
-    }
-    if (tabla[0][0] == simbol && tabla[1][1] == simbol && tabla[2][2] == simbol) {
-        return TRUE;
-    }
-    if (tabla[0][2] == simbol && tabla[1][1] == simbol && tabla[2][0] == simbol) {
-        return TRUE;
-    }
-    return FALSE;
-}
-
-void *thread_func(void *arg) {
-    CLIENT *client = (CLIENT *)arg;
-    
-    CLIENT client_info;
-    char password[50];
-    
-    recv(client->socket, &client_info, sizeof(CLIENT), 0); // Receive client info
-    recv(client->socket, password, 50, 0); // Receive password
-
-    if (game.client1.socket == 0) {
-        game.client1 = client_info;
-        strcpy(game.password, password);
-        printf("Client 1 conectat: %s\n", game.client1.nume);
-        send(client->socket, "Asteptare client 2...\n", 22, 0);
-        
-        while (game.client2.socket == 0) {
-            sleep(1);
-        }
-        
-        send(client->socket, "Client 2 conectat. Incepe jocul!\n", 33, 0);
-        trimite_tabla_client(client, game.tabla);
-    } else {
-        char received_password[50];
-        recv(client->socket, received_password, 50, 0);
-        
-        if (strcmp(received_password, game.password) != 0) {
-            send(client->socket, "Parola incorecta\n", 17, 0);
-            close(client->socket);
-            pthread_exit(NULL);
-        }
-        
-        game.client2 = client_info;
-        printf("Client 2 conectat: %s\n", game.client2.nume);
-        send(game.client1.socket, "Client 2 conectat. Incepe jocul!\n", 33, 0);
-        trimite_tabla_client(client, game.tabla);
-    }
-    
     while (1) {
-        trimite_tabla_client(client, game.tabla);
-        citire_mutare_client(client, game.tabla, client_info.simbol);
-        if (verificare_castigator(game.tabla, client_info.simbol)) {
-            send(client->socket, "Ai castigat!\n", 13, 0);
-            send(game.client1.socket == client->socket ? game.client2.socket : game.client1.socket, "Ai pierdut!\n", 12, 0);
-            break;
+        pthread_mutex_lock(&game_mutex);
+        if (client_socket == clients[current_turn]) {
+            send(client_socket, "TURN", 4, 0);
+            pthread_mutex_unlock(&game_mutex);
+
+            memset(buffer, 0, sizeof(buffer));
+            recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            sscanf(buffer, "%d %d", &row, &col);
+
+            pthread_mutex_lock(&game_mutex);
+            if (board[row][col] == ' ') {
+                board[row][col] = (current_turn == 0) ? 'X' : 'O';
+                current_turn = 1 - current_turn;
+            }
+            print_board(buffer);
+            send(clients[0], buffer, strlen(buffer), 0);
+            send(clients[1], buffer, strlen(buffer), 0);
+
+            if (check_winner()) {
+                strcat(buffer, "\nA castigat unul dintre jucatori!\n");
+                send(clients[0], buffer, strlen(buffer), 0);
+                send(clients[1], buffer, strlen(buffer), 0);
+                break;
+            }
         }
+        pthread_mutex_unlock(&game_mutex);
     }
-    
-    close(client->socket);
-    pthread_exit(NULL);
+
+    close(client_socket);
+    return NULL;
 }
 
 int main() {
-    int server_fd, new_socket;
+    int server_fd, client_socket;
     struct sockaddr_in address;
-    int addrlen = sizeof(address);
+    socklen_t addr_len = sizeof(address);
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == 0) {
-        perror("Eroare la crearea socketului");
-        exit(1);
-    }
-
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("Eroare la bind");
-        close(server_fd);
-        exit(1);
-    }
+    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
+    listen(server_fd, MAX_CLIENTS);
 
-    if (listen(server_fd, 3) < 0) {
-        perror("Eroare la listen");
-        close(server_fd);
-        exit(1);
-    }
+    printf("Server pornit pe portul %d\n", PORT);
+    initialize_board();
 
-    printf("Serverul asteapta conexiuni...\n");
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        client_socket = accept(server_fd, (struct sockaddr *)&address, &addr_len);
+        printf("Client conectat.\n");
+        clients[i] = client_socket;
+
+        pthread_t thread_id;
+        int *new_sock = malloc(sizeof(int));
+        *new_sock = client_socket;
+        pthread_create(&thread_id, NULL, client_handler, (void *)new_sock);
+    }
 
     while (1) {
-        new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-        if (new_socket < 0) {
-            perror("Eroare la accept");
-            continue;
-        }
-
-        CLIENT *client = malloc(sizeof(CLIENT));
-        if (!client) {
-            perror("Eroare la alocarea memoriei pentru client");
-            close(new_socket);
-            continue;
-        }
-
-        client->socket = new_socket;
-        pthread_t thread_id;
-        pthread_create(&thread_id, NULL, thread_func, (void *)client);
-        pthread_detach(thread_id);
+        sleep(1);
     }
 
     close(server_fd);
