@@ -71,29 +71,30 @@ Game* find_random_game() {
     return NULL;
 }
 
-void print_board(char *buffer) {
+void print_game_board(Game* game, char* buffer) {
     sprintf(buffer, "\n %c | %c | %c \n---+---+---\n %c | %c | %c \n---+---+---\n %c | %c | %c \n",
-            board[0][0], board[0][1], board[0][2],
-            board[1][0], board[1][1], board[1][2],
-            board[2][0], board[2][1], board[2][2]);
+            game->board[0][0], game->board[0][1], game->board[0][2],
+            game->board[1][0], game->board[1][1], game->board[1][2],
+            game->board[2][0], game->board[2][1], game->board[2][2]);
 }
 
-int check_winner() {
+int check_game_winner(Game* game) {
+    char (*board)[3] = game->board;
     for (int i = 0; i < 3; i++) {
-        if (board[i][0] == board[i][1] && board[i][1] == board[i][2] && board[i][0] != ' ') return 1;
-        if (board[0][i] == board[1][i] && board[1][i] == board[2][i] && board[0][i] != ' ') return 1;
+        if (board[i][0] != ' ' && board[i][0] == board[i][1] && board[i][1] == board[i][2]) return 1;
+        if (board[0][i] != ' ' && board[0][i] == board[1][i] && board[1][i] == board[2][i]) return 1;
     }
-    if (board[0][0] == board[1][1] && board[1][1] == board[2][2] && board[0][0] != ' ') return 1;
-    if (board[0][2] == board[1][1] && board[1][1] == board[2][0] && board[0][2] != ' ') return 1;
+    if (board[0][0] != ' ' && board[0][0] == board[1][1] && board[1][1] == board[2][2]) return 1;
+    if (board[0][2] != ' ' && board[0][2] == board[1][1] && board[1][1] == board[2][0]) return 1;
     return 0;
 }
 
 void *client_handler(void *arg) {
-    int row, col;
     int client_socket = *(int *)arg;
     free(arg);
     char buffer[1024];
     Game* game = NULL;
+    int player_number;
 
     recv(client_socket, buffer, sizeof(buffer) - 1, 0);
     
@@ -102,63 +103,81 @@ void *client_handler(void *arg) {
         game = create_game();
         if(game) {
             game->clients[0] = client_socket;
+            player_number = 0;
             send(client_socket, game->id, strlen(game->id), 0);
         }
     } else if(strcmp(buffer, "RANDOM") == 0) {
         game = find_random_game();
-        if(!game) game = create_game();
-        if(game->clients[0] == -1) game->clients[0] = client_socket;
-        else game->clients[1] = client_socket;
+        if(!game) {
+            game = create_game();
+            player_number = 0;
+        } else {
+            player_number = 1;
+        }
+        game->clients[player_number] = client_socket;
     } else {
         game = find_game(buffer);
         if(game && game->clients[1] == -1) {
             game->clients[1] = client_socket;
+            player_number = 1;
         }
     }
     pthread_mutex_unlock(&game_mutex);
 
-    if(!game || (game->clients[0] != client_socket && game->clients[1] != client_socket)) {
+    if(!game) {
         send(client_socket, "ERROR", 5, 0);
         close(client_socket);
         return NULL;
     }
 
+    // Wait for opponent
     while(game->clients[1] == -1) {
         sleep(1);
     }
 
-    while (1) {
+    // Game loop
+    while(1) {
         pthread_mutex_lock(&game_mutex);
-        if (client_socket == clients[current_turn]) {
+        if(game->current_turn == player_number) {
             send(client_socket, "TURN", 4, 0);
             pthread_mutex_unlock(&game_mutex);
 
             memset(buffer, 0, sizeof(buffer));
-            recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            if(recv(client_socket, buffer, sizeof(buffer) - 1, 0) <= 0) {
+                break;
+            }
+
+            int row, col;
             sscanf(buffer, "%d %d", &row, &col);
 
             pthread_mutex_lock(&game_mutex);
-            if (board[row][col] == ' ') {
-                board[row][col] = (current_turn == 0) ? 'X' : 'O';
-                current_turn = 1 - current_turn;
-            }
-            print_board(buffer);
-            send(clients[0], buffer, strlen(buffer), 0);
-            send(clients[1], buffer, strlen(buffer), 0);
+            if(row >= 0 && row < 3 && col >= 0 && col < 3 && game->board[row][col] == ' ') {
+                game->board[row][col] = (player_number == 0) ? 'X' : 'O';
+                print_game_board(game, buffer);
+                send(game->clients[0], buffer, strlen(buffer), 0);
+                send(game->clients[1], buffer, strlen(buffer), 0);
 
-            if (check_winner()) {
-                strcat(buffer, "\nA castigat unul dintre jucatori!\n");
-                send(clients[0], buffer, strlen(buffer), 0);
-                send(clients[1], buffer, strlen(buffer), 0);
-                break;
+                if(check_game_winner(game)) {
+                    sprintf(buffer, "\nJucatorul %d a castigat!\n", player_number + 1);
+                    send(game->clients[0], buffer, strlen(buffer), 0);
+                    send(game->clients[1], buffer, strlen(buffer), 0);
+                    game->active = 0;
+                    pthread_mutex_unlock(&game_mutex);
+                    break;
+                }
+                game->current_turn = 1 - game->current_turn;
             }
+            pthread_mutex_unlock(&game_mutex);
+        } else {
+            pthread_mutex_unlock(&game_mutex);
+            usleep(100000);
         }
-        pthread_mutex_unlock(&game_mutex);
     }
 
     close(client_socket);
     return NULL;
 }
+
 
 int main() {
     int server_fd, client_socket;
@@ -187,8 +206,17 @@ int main() {
         pthread_create(&thread_id, NULL, client_handler, (void *)new_sock);
     }
 
-    while (1) {
-        sleep(1);
+    while(1) {
+        client_socket = accept(server_fd, (struct sockaddr *)&address, &addr_len);
+        if(client_socket < 0) continue;
+
+        printf("Client conectat.\n");
+        int *new_sock = malloc(sizeof(int));
+        *new_sock = client_socket;
+        
+        pthread_t thread_id;
+        pthread_create(&thread_id, NULL, client_handler, (void*)new_sock);
+        pthread_join(thread_id,NULL);
     }
 
     close(server_fd);
