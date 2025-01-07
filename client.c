@@ -47,7 +47,7 @@ void makeMove(int sockfd) {
         if (sscanf(input, "%d %d", &row, &col) == 2) {
             if (row >= 0 && row < 3 && col >= 0 && col < 3) {
                 sprintf(move, "%d %d", row, col);
-                send(sockfd, move, strlen(move), 0);
+                write(sockfd, move, strlen(move));
                 break;
             }
         }
@@ -95,7 +95,7 @@ void handleGameMessages(int sockfd) {
                     printf("\nDoriti sa jucati din nou? (da/nu): ");
                     char response[10];
                     safeGetString(response, sizeof(response));
-                    send(sockfd, response, strlen(response), 0);
+                    write(sockfd, response, strlen(response));
                     
                     if (strcasecmp(response, "nu") == 0) {
                         printf("\nMultumim pentru joc! La revedere!\n");
@@ -162,7 +162,7 @@ int main(int argc, char *argv[]) {
     if (strlen(buffer) == 0 || strspn(buffer, " \t\n\r") == strlen(buffer)) {
         strcpy(buffer, "Player");
     }
-    send(sockfd, buffer, strlen(buffer), 0);
+    write(sockfd, buffer, strlen(buffer));
     printf("Nume inregistrat: %s\n", buffer);
 
     while (1) {
@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
         safeGetString(choice, sizeof(choice));
 
         if (choice[0] == '1') {
-            send(sockfd, "CREATI", 6, 0);
+            write(sockfd, "CREATI", 6);
             
             memset(buffer, 0, sizeof(buffer));
             int received = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
         else if (choice[0] == '2') {
             printf("\nIntroduceti ID-ul jocului: ");
             safeGetString(buffer, sizeof(buffer));
-            send(sockfd, buffer, strlen(buffer), 0);
+            write(sockfd, buffer, strlen(buffer));
             printf("\nSe incearca conectarea la joc...\n\n");
             break;
         }

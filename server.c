@@ -109,25 +109,25 @@ void reset_game(Game *game) {
     
     char message[1024];
     sprintf(message, "Joc nou inceput! Este randul lui %s (X)\n", game->player_names[0]);
-    send(game->clients[0], message, strlen(message), 0);
-    send(game->clients[1], message, strlen(message), 0);
-    send(game->clients[0], "TURN", 4, 0);
+    write(game->clients[0], message, strlen(message));
+    write(game->clients[1], message, strlen(message));
+    write(game->clients[0], "TURN", 4);
 }
 
 void notify_game_start(Game *game) {
     char message[1024];
     sprintf(message, "Jocul a inceput! %s (X) vs %s (O)\n", 
             game->player_names[0], game->player_names[1]);
-    send(game->clients[0], message, strlen(message), 0);
-    send(game->clients[1], message, strlen(message), 0);
-    send(game->clients[0], "TURN", 4, 0);
+    write(game->clients[0], message, strlen(message));
+    write(game->clients[1], message, strlen(message));
+    write(game->clients[0], "TURN", 4);
 }
 
 void handle_disconnection(Game *game, int client_socket) {
     char message[1024] = "Un jucator s-a deconectat. Jocul se inchide.\n";
     for (int i = 0; i < game->client_count; i++) {
         if (game->clients[i] != client_socket) {
-            send(game->clients[i], message, strlen(message), 0);
+            write(game->clients[i], message, strlen(message));
             close(game->clients[i]);
         }
     }
@@ -161,34 +161,34 @@ void process_turn(Game *game, int client_socket) {
                 
                 char board_display[1024];
                 print_board(board_display, game->board);
-                send(game->clients[0], board_display, strlen(board_display), 0);
-                send(game->clients[1], board_display, strlen(board_display), 0);
+                write(game->clients[0], board_display, strlen(board_display));
+                write(game->clients[1], board_display, strlen(board_display));
                 
                 if (check_win(game->board, symbol)) {
                     char win_message[1024];
                     sprintf(win_message, "Jucatorul %s a castigat!\n", game->player_names[current_player]);
-                    send(game->clients[0], win_message, strlen(win_message), 0);
-                    send(game->clients[1], win_message, strlen(win_message), 0);
-                    send(game->clients[0], "REPLAY", 6, 0);
-                    send(game->clients[1], "REPLAY", 6, 0);
+                    write(game->clients[0], win_message, strlen(win_message));
+                    write(game->clients[1], win_message, strlen(win_message));
+                    write(game->clients[0], "REPLAY", 6);
+                    write(game->clients[1], "REPLAY", 6);
                     return;
                 } else if (game->moves_count >= 9) {
-                    send(game->clients[0], "Egalitate!\n", 11, 0);
-                    send(game->clients[1], "Egalitate!\n", 11, 0);
+                    write(game->clients[0], "Egalitate!\n", 11);
+                    write(game->clients[1], "Egalitate!\n", 11);
                     
-                    send(game->clients[0], "REPLAY", 6, 0);
-                    send(game->clients[1], "REPLAY", 6, 0);
+                    write(game->clients[0], "REPLAY", 6);
+                    write(game->clients[1], "REPLAY", 6);
                     return;
                 }
                 
                 game->current_turn = 1 - game->current_turn;
-                send(game->clients[game->current_turn], "TURN", 4, 0);
+                write(game->clients[game->current_turn], "TURN", 4);
                 return;
             } else {
-                send(client_socket, "Mutare invalida. Incercati din nou.\n", 40, 0);
+                write(client_socket, "Mutare invalida. Incercati din nou.\n", 400);
             }
         } else {
-            send(client_socket, "Format invalid. Introduceti linia si coloana (ex: 1 2).\n", 60, 0);
+            write(client_socket, "Format invalid. Introduceti linia si coloana (ex: 1 2).\n", 600);
         }
     }
 }
@@ -201,7 +201,7 @@ void *client_handler(void *arg) {
     Game *game = NULL;
     
     memset(buffer, 0, sizeof(buffer));
-    if (recv(client_socket, buffer, sizeof(buffer) - 1, 0) <= 0) {
+    if (read(client_socket, buffer, sizeof(buffer) - 1) <= 0) {
         close(client_socket);
         return NULL;
     }
@@ -211,7 +211,7 @@ void *client_handler(void *arg) {
     printf("Player connected: %s\n", player_name);
     
     memset(buffer, 0, sizeof(buffer));
-    if (recv(client_socket, buffer, sizeof(buffer) - 1, 0) <= 0) {
+    if (read(client_socket, buffer, sizeof(buffer) - 1) <= 0) {
         close(client_socket);
         return NULL;
     }
@@ -228,7 +228,7 @@ void *client_handler(void *arg) {
         game->moves_count = 0;
         game->game_running = 1;
         printf("Game created with ID: %s\n", game->game_id);
-        send(client_socket, game->game_id, strlen(game->game_id), 0);
+        write(client_socket, game->game_id, strlen(game->game_id));
         pthread_mutex_unlock(&game_mutex);
         
     } else {
@@ -240,7 +240,7 @@ void *client_handler(void *arg) {
             game->client_count++;
             notify_game_start(game);
         } else {
-            send(client_socket, "Jocul este deja complet sau nu exista.\n", 39, 0);
+            write(client_socket, "Jocul este deja complet sau nu exista.\n", 39);
             pthread_mutex_unlock(&game_mutex);
             close(client_socket);
             return NULL;
