@@ -6,75 +6,88 @@
 
 #define PORT 12345
 
-void joacaMutare(int sockfd) {
-    int row, col;
+void executaMutare(int socket_fd) {
+    int linie, coloana;
     char mutare[10];
 
     printf("Introduceti linia si coloana (ex: 1 2): ");
-    scanf("%d %d", &row, &col);
+    scanf("%d %d", &linie, &coloana);
 
-    sprintf(mutare, "%d %d", row, col);
-    write(sockfd, mutare, strlen(mutare));
+    sprintf(mutare, "%d %d", linie, coloana);
+    if (write(socket_fd, mutare, strlen(mutare)) < 0) {
+        perror("Eroare la trimiterea mutarii");
+        exit(1);
+    }
 }
 
 int main() {
-    int sockfd;
-    struct sockaddr_in serv_addr;
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Connect failed");
+    int socket_fd;
+    struct sockaddr_in adresaServer;
+    char buffer[1024];
+    if ((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Eroare la crearea socket-ului");
         return 1;
     }
-
-    char buffer[1024];
+    adresaServer.sin_family = AF_INET;
+    adresaServer.sin_port = htons(PORT);
+    adresaServer.sin_addr.s_addr = INADDR_ANY;
+    if (connect(socket_fd, (struct sockaddr *)&adresaServer, sizeof(adresaServer)) < 0) {
+        perror("Conectarea a esuat");
+        return 1;
+    }
     printf("Conectat la server. Asteptati...\n");
-
-    printf("1. Create new game\n");
-    printf("2. Join game by ID\n");
-    printf("3. Join random game\n");
-    printf("Choice: ");
-    
-    int choice;
-    scanf("%d", &choice);
-
-    switch(choice) {
+    printf("1. Creeaza joc nou\n");
+    printf("2. Intra in joc dupa ID\n");
+    printf("3. Intra in joc aleator\n");
+    printf("Alegeti optiunea: ");
+    int optiune;
+    scanf("%d", &optiune);
+    switch(optiune) {
         case 1:
-            write(sockfd, "NEW", 3);
-            read(sockfd, buffer, sizeof(buffer));
-            printf("Game created! ID: %s\n", buffer);
+            if (write(socket_fd, "NEW", 3) < 0) {
+                perror("Eroare la trimiterea comenzii NEW");
+                return 1;
+            }
+            if (read(socket_fd, buffer, sizeof(buffer)) < 0) {
+                perror("Eroare la citirea ID-ului jocului");
+                return 1;
+            }
+            printf("Joc creat! ID: %s\n", buffer);
             break;
         case 2:
-            printf("Enter game ID: ");
+            printf("Introduceti ID-ul jocului: ");
             scanf("%s", buffer);
-            write(sockfd, buffer, strlen(buffer));
+            if (write(socket_fd, buffer, strlen(buffer)) < 0) {
+                perror("Eroare la trimiterea ID-ului");
+                return 1;
+            }
             break;
         case 3:
-            write(sockfd, "RANDOM", 6);
+            if (write(socket_fd, "RANDOM", 6) < 0) {
+                perror("Eroare la trimiterea comenzii RANDOM");
+                return 1;
+            }
             break;
     }
 
     while (1) {
         memset(buffer, 0, sizeof(buffer));
-        int bytes_received = read(sockfd, buffer, sizeof(buffer) - 1);
+        int octeti_primiti = read(socket_fd, buffer, sizeof(buffer) - 1);
 
-        if (bytes_received <= 0) {
-            printf("Conexiunea s-a inchis.\n");
+        if (octeti_primiti < 0) {
+            perror("Eroare la citirea datelor de la server");
             break;
         }
-
-        buffer[bytes_received] = '\0';
+        if (octeti_primiti == 0) {
+            printf("Conexiunea cu serverul s-a inchis.\n");
+            break;
+        }
+        buffer[octeti_primiti] = '\0';
         printf("%s\n", buffer);
-
         if (strcmp(buffer, "TURN") == 0) {
-            joacaMutare(sockfd);
+            executaMutare(socket_fd);
         }
     }
-
-    close(sockfd);
+    close(socket_fd);
     return 0;
 }
