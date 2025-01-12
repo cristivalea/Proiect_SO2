@@ -1,5 +1,3 @@
-// client.c
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +14,7 @@ void joacaMutare(int sockfd) {
     scanf("%d %d", &row, &col);
 
     sprintf(mutare, "%d %d", row, col);
-    send(sockfd, mutare, strlen(mutare), 0);
+    write(sockfd, mutare, strlen(mutare));
 }
 
 int main() {
@@ -34,9 +32,9 @@ int main() {
     }
 
     char buffer[1024];
-    printf("Conectat la server. Asteptati...");
+    printf("Conectat la server. Asteptati...\n");
 
- printf("1. Create new game\n");
+    printf("1. Create new game\n");
     printf("2. Join game by ID\n");
     printf("3. Join random game\n");
     printf("Choice: ");
@@ -46,23 +44,23 @@ int main() {
 
     switch(choice) {
         case 1:
-            send(sockfd, "NEW", 3, 0);
-            recv(sockfd, buffer, sizeof(buffer), 0);
+            write(sockfd, "NEW", 3);
+            read(sockfd, buffer, sizeof(buffer));
             printf("Game created! ID: %s\n", buffer);
             break;
         case 2:
             printf("Enter game ID: ");
             scanf("%s", buffer);
-            send(sockfd, buffer, strlen(buffer), 0);
+            write(sockfd, buffer, strlen(buffer));
             break;
         case 3:
-            send(sockfd, "RANDOM", 6, 0);
+            write(sockfd, "RANDOM", 6);
             break;
     }
 
     while (1) {
         memset(buffer, 0, sizeof(buffer));
-        int bytes_received = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+        int bytes_received = read(sockfd, buffer, sizeof(buffer) - 1);
 
         if (bytes_received <= 0) {
             printf("Conexiunea s-a inchis.\n");
