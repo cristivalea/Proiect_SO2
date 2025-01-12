@@ -203,6 +203,8 @@ int main() {
 
     printf("Server started on port %d\n", PORT);
 
+    pthread_t thread_id[1000];
+    int contor= 0;
     while(1) {
         client_socket = accept(server_fd, (struct sockaddr *)&address, &addr_len);
         if(client_socket < 0) continue;
@@ -211,9 +213,13 @@ int main() {
         int *new_sock = malloc(sizeof(int));
         *new_sock = client_socket;
         
-        pthread_t thread_id;
-        pthread_create(&thread_id, NULL, client_handler, (void*)new_sock);
-        pthread_detach(thread_id);
+        
+        pthread_create(&thread_id[contor], NULL, client_handler, (void*)new_sock);
+        pthread_detach(thread_id[contor]);
+        if(contor == 1000){
+            break;
+        }
+        contor++;
     }
 
     close(server_fd);
